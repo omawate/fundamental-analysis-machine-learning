@@ -1,0 +1,196 @@
+---
+title: "Random Forests"
+author: "Neel Kasmalkar"
+date: "15/3/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Download necessary packages
+No need to worry about this code.
+
+```{r install, include = FALSE}
+packages <- c('caret', 'rattle', 'randomForest') 
+
+# Function to install packages only if they are not already installed
+install_if_not_installed <- function(packages) {
+  for (package in packages) {
+    if (!require(package, character.only = TRUE, quietly = TRUE)) {
+      install.packages(package, dependencies = TRUE)
+      library(package, character.only = TRUE)
+    }
+  }
+}
+
+# Call the function with your list of packages
+install_if_not_installed(packages)
+
+library(caret)
+library(rattle)
+library(randomForest)
+
+```
+
+# Example 1: Landslide data
+
+Let us compare how well logistic regression works against landslide data.
+
+### Load data and settings
+
+```{r landslide_data}
+set.seed(10)
+
+df = read.csv('landslide_norm_elev.csv')
+colnames(df) = c('x', 'y', 'slope', 'cplan', 'cprof', 'elev', 'log10_carea', 'landslides')
+df$landslides = as.factor(df$landslides)
+
+#Take first 1/4th observations as testing data.
+n = nrow(df)
+sdf_test = df[1:(n/4),]
+sdf_train = df[(n/4):n,]
+
+y_test = sdf_test$landslides
+y_train = sdf_train$landslides
+```
+
+### Results of the logistic regression
+
+```{r landslide_glm}
+
+#Develop the landslide GLM.
+g = glm(landslides ~ slope + cplan + cprof + elev + log10_carea, data = sdf_train, family = binomial('logit'))
+
+#Predict the values.
+y_pred_glm = predict(g, newdata = sdf_test, type = "response")
+
+#Print the confusion table.
+tab_pred_glm <- table(as.factor(y_pred_glm > 0.5),y_test, dnn=c("Predicted","Observed"))
+print.table(tab_pred_glm)
+
+# Calculate the metrics.
+acc_pred_glm <- (tab_pred_glm[1,1] + tab_pred_glm[2,2])/(tab_pred_glm[1,1] + tab_pred_glm[1,2] + 
+                                                     tab_pred_glm[2,1] + tab_pred_glm[2,2])*100
+sprintf("Logistic regression accuracy: %0.3f%%.", acc_pred_glm)
+sen_pred_glm <- (tab_pred_glm[2,2]/(tab_pred_glm[2,2] + tab_pred_glm[1,2]))*100
+sprintf("Logistic regression sensitivity: %0.3f%%.", sen_pred_glm)
+spe_pred_glm <- (tab_pred_glm[1,1]/(tab_pred_glm[1,1] + tab_pred_glm[2,1]))*100
+sprintf("Logistic regression specificity: %0.3f%%.", spe_pred_glm)
+```
+
+### Results of random forest
+
+You can play around with nodesize, ntree and sampsize hyperparameters.
+```{r landslide_rf}
+set.seed(10)
+
+#How many data points should there be within a branch of a decision tree?
+nodesize = 40
+
+#How many decision trees should be made?
+ntree = 1000
+
+#How many data points should each decision tree be given?
+sampsize = ceiling(nrow(sdf_train)*0.6)
+
+rf = randomForest(landslides ~ ., data = sdf_train, ntree = ntree, sampsize = sampsize, importance =TRUE, nodesize = nodesize, method= 'classification')
+
+
+y_pred = predict(rf, newdata = sdf_test, type = "response")
+tab_pred <- table(y_pred,y_test, dnn=c("Predicted","Observed"))
+print.table(tab_pred)
+
+# Calculate and display accuracy measures of the model
+acc_pred <- (tab_pred[1,1] + tab_pred[2,2])/(tab_pred[1,1] + tab_pred[1,2] + 
+                                                     tab_pred[2,1] + tab_pred[2,2])*100
+sprintf("Random forest accuracy: %0.3f%%.", acc_pred)
+sen_pred <- (tab_pred[2,2]/(tab_pred[2,2] + tab_pred[1,2]))*100
+sprintf("Random forest sensitivity: %0.3f%%.", sen_pred)
+spe_pred <- (tab_pred[1,1]/(tab_pred[1,1] + tab_pred[2,1]))*100
+sprintf("Random forest specificity: %0.3f%%.", spe_pred)
+```
+# Example 3: Forest Cover
+
+Let's look at a different dataset, one which predicts forest cover (which type of trees in forest). 
+In this case, more is not always better. A particular tree may exist only in a given elevation band.
+Logistic regression might not be able to capture that non-linearity, but Random Forests can.
+
+### Load data.
+```{r forest_data}
+
+# Download and read the dataset
+forest <- read.csv('forestcover.csv')
+
+#Pine forest cover, having binary outcome
+cover_candidates = c(2,3)
+forest$Cover_Type = as.factor((forest$Cover_Type == 2)| (forest$Cover_Type == 3))
+
+#Set up training and testing data.
+training_index <- createDataPartition(forest$Cover_Type, p=0.8, list=FALSE)
+training_data <- forest[training_index, ]
+testing_data <- forest[-training_index, ]
+
+
+
+
+
+```
+
+### Try Logistic regression via GLM.
+```{r forest_glm}
+
+#Train the model.
+logistic_model <- glm(Cover_Type ~ ., data=training_data, family = binomial('logit'))
+
+#Get the confusion matrix.
+y_glm = predict(logistic_model, newdata = testing_data, type = "response")
+glm_pred <- table(as.factor(y_glm > 0.5), testing_data$Cover_Type, dnn=c("Predicted","Observed"))
+print('\n')
+print.table(glm_pred)
+
+# Calculate and display accuracy measures of the model
+acc_pred <- (glm_pred[1,1] + glm_pred[2,2])/(glm_pred[1,1] + glm_pred[1,2] + 
+                                                     glm_pred[2,1] + glm_pred[2,2])*100
+sprintf("Logistic regression accuracy: %0.3f%%.", acc_pred)
+sen_pred <- (glm_pred[2,2]/(glm_pred[2,2] + glm_pred[1,2]))*100
+sprintf("Logistic regression sensitivity: %0.3f%%.", sen_pred)
+spe_pred <- (glm_pred[1,1]/(glm_pred[1,1] + glm_pred[2,1]))*100
+sprintf("Logistic regression specificity: %0.3f%%.", spe_pred)
+```
+
+### Try Random Forest.
+
+```{r forest_rf}
+
+set.seed(10)
+
+
+#How many data points should there be within a branch of a decision tree?
+nodesize = 20
+
+#How many decision trees should be made?
+ntree = 100
+
+#How many data points should each decision tree be given?
+sampsize = ceiling(nrow(training_data)*0.6)
+
+# Training a Random Forest model
+rf_model <- randomForest(Cover_Type ~ ., data=training_data, ntree=ntree, nodesize = nodesize, sampsize = sampsize, method = 'classification')
+rf_predictions <- predict(rf_model, newdata=testing_data, type = 'response')
+
+y_rf = predict(rf_model, newdata = testing_data, type = "response")
+rf_pred <- table(y_rf, testing_data$Cover_Type, dnn=c("Predicted","Observed"))
+print.table(rf_pred)
+
+# Calculate and display accuracy measures of the model
+acc_pred <- (rf_pred[1,1] + rf_pred[2,2])/(rf_pred[1,1] + rf_pred[1,2] + 
+                                                     rf_pred[2,1] + rf_pred[2,2])*100
+sprintf("Random forest accuracy: %0.3f%%.", acc_pred)
+sen_pred <- (rf_pred[2,2]/(rf_pred[2,2] + rf_pred[1,2]))*100
+sprintf("Random forest sensitivity: %0.3f%%.", sen_pred)
+spe_pred <- (rf_pred[1,1]/(rf_pred[1,1] + rf_pred[2,1]))*100
+sprintf("Random forest specificity: %0.3f%%.", spe_pred)
+
+```
